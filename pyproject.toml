@@ -1,0 +1,13 @@
+[project]
+name = "get-wanted-food"
+version = "0.1.0"
+description = "UIUC dining hall scanner — detects wanted food (steak/salmon/rib/tip/cha/loin) across dining halls"
+requires-python = ">=3.10,<3.13"
+dependencies = [
+    "playwright>=1.40",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8,<10",
+]

@@ -1,0 +1,11 @@
+task_record_id: ""
+title: ""
+status: planned
+summary: ""
+related_work_orders: []
+changed_paths: []
+required_docs: []
+required_tests: []
+workspace_escalation_required: false
+workspace_escalation_reason: ""
+closeout_summary: ""

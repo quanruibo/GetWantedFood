@@ -1,0 +1,17 @@
+# Get_wanted_food Current Spec
+- 文档角色：`current_fact`
+- 当前项目定位：`已接入项目近处入口`
+- authoritative governance tree：`../../.governance/`
+- source of truth：`../../.governance/governance/06_SOURCE_OF_TRUTH_AND_BOUNDARIES.md`
+- primary_cli_entry：`./uiuc_dining_scan.py`
+- sample_output_artifact：`./hits.csv`
+- scope_type：`project`
+- project_dir_name：`Get_wanted_food`
+- work_orders_root：`../../.governance/work_orders/`
+- validation_entry：`./VALIDATION.md`
+- project_governance_entry：`./project_governance/README.md`
+- project_task_record_policy：`./project_governance/TASK_RECORD_POLICY.md`
+- validation_hardening_plan：`./project_governance/VALIDATION_HARDENING_PLAN.md`
+- project_task_records_root：`./project_governance/task_records/`
+- git_mode：`non_git`
+- project_status：`onboarding`

@@ -1,0 +1,12 @@
+# Get_wanted_food AGENTS
+- 先读 root `AGENTS.md`
+- 先运行 `uv run python .governance/scripts/workspace/load_context.py --action <create|modify|import> --project Get_wanted_food --format text`
+- 再读 loader 返回的最小必读文件；`./README.md`、`./CURRENT_SPEC.md`、`./VALIDATION.md` 通常在其中
+- 项目内部的变更编排、任务记录与验收证据入口见 `./project_governance/README.md`
+- 项目级 task record 生命周期与归档规则见 `./project_governance/TASK_RECORD_POLICY.md`
+- 项目验证覆盖缺口与补强优先级见 `./project_governance/VALIDATION_HARDENING_PLAN.md`
+- 当前主要脚本入口是 `./uiuc_dining_scan.py`；改 CLI 参数、日期处理或 CSV 输出时，先回查 `./VALIDATION.md`、`./tests/README.md`、`./design_docs/CLI.md`
+- 项目任务与任务记录数量按边界、风险和收口需要决定，不以最少数量为目标；若触碰 workspace 控制面，再升级或关联到 `.governance/work_orders/`
+- 涉及 workspace governance、shared path 或跨项目联动时，再按需进入 `../../.governance/`
+- 工单路径固定为 `../../.governance/work_orders/<state>/Get_wanted_food/YYYY/MM/DD/`
+- 如为 import 接入且仍含 `UPSTREAM_*` / `work_orders/` / 治理型 `tools/`，先读 `../../.governance/governance/09_IMPORTED_PROJECT_NORMALIZATION.md`

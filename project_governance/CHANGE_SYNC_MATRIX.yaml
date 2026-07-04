@@ -1,0 +1,40 @@
+version: 1
+project_dir_name: "Get_wanted_food"
+summary_output: project_governance/artifacts/latest/validation_summary.json
+workspace_validation_command: uv run python .governance/scripts/validation/run_full_validation.py
+default_test_command: uv run pytest tests/
+rules:
+  - rule_id: validation_and_routes
+    reason: 项目近处入口或验证路由变化，需要同步验证文档和对应测试。
+    match_any:
+      - README.md
+      - AGENTS.md
+      - CURRENT_SPEC.md
+      - VALIDATION.md
+      - tests/README.md
+      - project_governance/**
+    required_docs:
+      - VALIDATION.md
+      - tests/README.md
+      - project_governance/README.md
+    required_tests:
+      - tests/test_validation_entry.py
+    optional_tests: []
+    suggest_task_record: true
+    requires_full_pytest: false
+    requires_workspace_validation: false
+coverage_watch:
+  inventory_docs:
+    - tests/README.md
+    - design_docs/TEST_PLAN.md
+  critical_paths:
+    - path: VALIDATION.md
+      expected_rule_ids:
+        - validation_and_routes
+  required_active_tests:
+    - tests/test_validation_entry.py
+workspace_escalation:
+  reason: 变更触碰 workspace 控制面或治理脚本时，需要升级到 workspace validation。
+  match_any:
+    - .governance/**
+    - shared/**
