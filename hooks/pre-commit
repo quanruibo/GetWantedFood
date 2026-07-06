@@ -1,0 +1,178 @@
+#!/usr/bin/env bash
+# [pre-commit-managed-by-core-hooksPath]
+# ============================================================================
+# pre-commit hook —— ruff 自动检查与格式化（Python）+ work-order 拦截
+# ----------------------------------------------------------------------------
+# 行为：
+#   1. 仅处理本次【暂存】的 .py 文件（不全仓扫，不碰未参与提交的文件）
+#   2. 跑 `ruff check --fix`（自动修可修的）+ `ruff format`（格式化）
+#   3. 自动改完的文件会重新 `git add` 回暂存区，省去手动再 add
+#   4. 若 ruff 报了【无法自动修】的 error，则中止本次提交
+#   5. ruff 不在 PATH 时尝试 `uvx ruff`（本机 uv 管理），仍不可用则跳过
+#
+# 真相源（单一来源）：本文件（.governance/hooks/git/pre-commit），进版本控制。
+# 生效方式：`git config core.hooksPath .governance/hooks/git`
+#           —— core.hooksPath 是 local config，新设备 clone 后需执行一次此命令
+#           （已写入 README「新机器接入」+ bootstrap playbook + check_hook_sync 检测）。
+#           git 会在此目录下找与事件同名的可执行文件（pre-commit）。
+#
+# 为什么不用 .git/hooks/ 或 ~/.git-templates/：
+#   .git/hooks/ 永不进版本控制；~/.git-templates/ 是机器本地家目录文件；
+#   两者都不随 git push/pull 跨设备同步，会导致 hook 缺失或漂移。
+#   详见 rules/repo-wide/04_pre_commit_hook_version_control.md。
+#
+# 临时绕过：提交时加环境变量 RUFF_SKIP=1（跳过 ruff）/ WO_SKIP=1（跳过工单拦截）
+#           如 RUFF_SKIP=1 git commit ...
+# ============================================================================
+
+set -u  # 注意：故意不开 -e，ruff 的退出码要由我们解读，不能一脚踢出去
+
+# --- work-order 拦截函数 --------------------------------------------------
+# 抽成函数：ruff 跳过、无 .py、正常跑完三个路径都要调用它，
+# 否则"没有 .py 就 exit 0"会连带跳过 WO 拦截，让工单前置纪律静默失效。
+# BLOCKING：required=true 且 satisfied=false 时 exit 1 拦 commit。
+# 用 WO_SKIP=1 跳过（诊断用，不解除纪律约束）。
+run_wo_check() {
+  if [[ "${WO_SKIP:-0}" == "1" ]]; then
+    return 0
+  fi
+  # 优先用写入拦截脚本（check_work_order_on_touch.py），它输出含 required_actions
+  # 可直接 copy-paste 执行的建工单命令；找不到则回退到旧 checker（仅元信息）。
+  wo_checker=""
+  # 候选路径前缀覆盖三种 cwd：仓根（.governance/）、上一级（../.governance/）、
+  # projects/<proj>/ 项目仓根（../../.governance/，跨两层到达 governance 仓）。
+  # governance 仓自身：候选 1/2 命中，5/6 跳过（../../.governance/ 不存在，无害）。
+  # projects/<proj>/ 项目仓：候选 1-4 都找不到，5/6 命中（跨仓定位 checker）。
+  # 项目仓单独 clone：全部找不到 → wo_checker 空 → return 0 跳过 WO（只保留 ruff）。
+  for candidate in ".governance/scripts/validation/check_work_order_on_touch.py" \
+                   ".governance/scripts/work_orders/check_work_order_required.py" \
+                   "../.governance/scripts/validation/check_work_order_on_touch.py" \
+                   "../.governance/scripts/work_orders/check_work_order_required.py" \
+                   "../../.governance/scripts/validation/check_work_order_on_touch.py" \
+                   "../../.governance/scripts/work_orders/check_work_order_required.py"; do
+    if [[ -f "$candidate" ]]; then
+      wo_checker="$candidate"
+      break
+    fi
+  done
+  [[ -z "$wo_checker" ]] && return 0
+  # 解析 python：只用 uv run python——跨仓库稳定，不受 WindowsApps
+  # python3 stub 影响，也避开 python/python3 的版本不确定性。
+  # uv 是本 hook 的既有依赖（ruff 块也依赖 uvx），故不做 python/python3 回退。
+  wo_py=""
+  if command -v uv >/dev/null 2>&1; then
+    wo_py="uv run python"
+  fi
+  [[ -z "$wo_py" ]] && return 0
+  # 收集所有 staged 文件（不限 .py），传给 checker
+  mapfile -t staged < <(git diff --cached --name-only --diff-filter=ACMR)
+  [[ ${#staged[@]} -eq 0 ]] && return 0
+  # check_work_order_on_touch.py 用 planned 路径集判定；exit 1 = 应拦截
+  wo_output=$($wo_py "$wo_checker" "${staged[@]}" 2>&1)
+  wo_rc=$?
+  if [[ $wo_rc -ne 0 ]]; then
+    echo "" >&2
+    echo "[pre-commit] ✗ work-order 拦截：本次 staged 文件触及 governance/cross_boundary" >&2
+    echo "[pre-commit]   对象，但未检测到对应 work_order 路径。" >&2
+    echo "$wo_output" >&2
+    echo "" >&2
+    echo "[pre-commit] 请先完成上述 required_actions（建工单），" >&2
+    echo "[pre-commit] 或把 work order 路径加入 staged，再重新提交。" >&2
+    echo "[pre-commit] 诊断绕过：WO_SKIP=1 git commit ...（不解除纪律约束）" >&2
+    exit 1
+  fi
+  return 0
+}
+
+# --- 可选跳过 -------------------------------------------------------------
+if [[ "${RUFF_SKIP:-0}" == "1" ]]; then
+  echo "[pre-commit] RUFF_SKIP=1，跳过 ruff 检查"
+  run_wo_check
+  exit 0
+fi
+
+# --- 确定 ruff 命令 -------------------------------------------------------
+# 优先用全局 PATH 里的 ruff；找不到则回退到 uvx ruff（本机 uv 管理）。
+RUFF=""
+if command -v ruff >/dev/null 2>&1; then
+  RUFF="ruff"
+elif command -v uvx >/dev/null 2>&1; then
+  RUFF="uvx ruff"
+else
+  echo "[pre-commit] 未找到 ruff 也不可用 uvx，跳过（如需启用请 pip install ruff）"
+  exit 0
+fi
+
+# --- 收集本次暂存的 .py 文件 ----------------------------------------------
+# 用 `git diff --cached --name-only --diff-filter=ACMR`：
+#   --cached        只看暂存区
+#   --diff-filter   只看新增(A)/复制(C)/修改(M)/重命名(R)，排除删除(D)
+mapfile -t py_files < <(git diff --cached --name-only --diff-filter=ACMR -- '*.py')
+
+if [[ ${#py_files[@]} -eq 0 ]]; then
+  # 没有暂存的 .py，跳过 ruff，但仍要跑 WO 警告（工单触发常含非 .py 文件）
+  run_wo_check
+  exit 0
+fi
+
+# 过滤掉已删除/路径里含特殊字符导致读不到的文件，避免 ruff 误报
+declared=()
+for f in "${py_files[@]}"; do
+  if [[ -f "$f" ]]; then
+    declared+=("$f")
+  fi
+done
+if [[ ${#declared[@]} -eq 0 ]]; then
+  run_wo_check
+  exit 0
+fi
+
+echo "[pre-commit] 对 ${#declared[@]} 个 .py 文件跑 ruff..."
+
+# --- 第 1 步：ruff check --fix（尽量自动修，退出码此时不可信） -------------
+# 注意：绝不能用 --exit-non-zero-on-fix，它的语义是「只要改了文件就非 0」，
+#       会把「能自动修」误判成「有未修违规」。这里只让它修，退出码忽略。
+$RUFF check --fix "${declared[@]}" >/dev/null 2>&1 || true
+
+# --- 第 2 步：ruff format（格式化） ---------------------------------------
+$RUFF format "${declared[@]}" >/dev/null 2>&1
+rc_fmt=$?
+if [[ $rc_fmt -ne 0 ]]; then
+  echo "" >&2
+  echo "[pre-commit] ✗ ruff format 失败（退出码 $rc_fmt），已中止提交" >&2
+  exit 1
+fi
+
+# --- 第 3 步：把自动修改重新加回暂存区 -------------------------------------
+# 只 add 真的被 ruff 改过的文件，避免误纳入其它无关 working-tree 改动
+changed_any=0
+for f in "${declared[@]}"; do
+  if ! git diff --quiet -- "$f" 2>/dev/null \
+     || ! git diff --cached --quiet -- "$f" 2>/dev/null; then
+    # working tree 或暂存区相对 HEAD 有差异 → 重新 stage
+    git add -- "$f"
+    changed_any=1
+  fi
+done
+if [[ $changed_any -eq 1 ]]; then
+  echo "[pre-commit] ruff 已自动修改并重新暂存相关文件"
+fi
+
+# --- 第 4 步：复查 —— 再跑一次不带 --fix 的 ruff check ---------------------
+# 此时自动可修的都已修好；若仍报错，说明存在【无法自动修】的违规 → 阻断
+$RUFF check "${declared[@]}"
+rc_recheck=$?
+if [[ $rc_recheck -ne 0 ]]; then
+  echo "" >&2
+  echo "[pre-commit] ✗ ruff check 发现无法自动修复的问题，已中止提交" >&2
+  echo "[pre-commit]   请修复后重新 'git add' + 'git commit'，" >&2
+  echo "[pre-commit]   或临时绕过：RUFF_SKIP=1 git commit ..." >&2
+  exit 1
+fi
+
+echo "[pre-commit] ✓ ruff 检查通过"
+
+# --- 第 5 步：work-order 警告（函数定义在文件头部，三个退出点共用） ---
+run_wo_check
+
+exit 0
