@@ -16,10 +16,9 @@
 #           （已写入 README「新机器接入」+ bootstrap playbook + check_hook_sync 检测）。
 #           git 会在此目录下找与事件同名的可执行文件（pre-commit）。
 #
-# 为什么不用 .git/hooks/ 或 ~/.git-templates/：
-#   .git/hooks/ 永不进版本控制；~/.git-templates/ 是机器本地家目录文件；
-#   两者都不随 git push/pull 跨设备同步，会导致 hook 缺失或漂移。
-#   详见 rules/repo-wide/04_pre_commit_hook_version_control.md。
+# 为什么不用 .git/hooks/：
+#   .git/hooks/ 永不进版本控制（git 内置排除 .git/），不随 git push/pull 跨设备同步，
+#   会导致 hook 缺失或漂移。详见 rules/repo-wide/04_pre_commit_hook_version_control.md。
 #
 # 临时绕过：提交时加环境变量 RUFF_SKIP=1（跳过 ruff）/ WO_SKIP=1（跳过工单拦截）
 #           如 RUFF_SKIP=1 git commit ...
